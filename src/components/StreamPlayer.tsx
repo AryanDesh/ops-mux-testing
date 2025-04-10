@@ -7,25 +7,7 @@ interface StreamStatus {
 }
 
 export default function StreamPlayer({ playbackId, streamId }: { playbackId: string, streamId: string }) {
-  const [isLive, setIsLive] = useState(false);
   const [status, setStatus] = useState<StreamStatus | null>(null);
-
-  useEffect(() => {
-    const pollStreamStatus = async () => {
-      try {
-        const res = await fetch(`/api/mux/stream-status?streamId=${streamId}`);
-        const data: StreamStatus = await res.json();
-        setStatus(data);
-        setIsLive(data.isActive);
-      } catch (error) {
-        console.error('Polling failed:', error);
-      }
-    };
-
-    const interval = setInterval(pollStreamStatus, 5000); 
-    pollStreamStatus(); 
-    return () => clearInterval(interval);
-  }, [streamId]);
 
   return (
     <div className="mt-6">

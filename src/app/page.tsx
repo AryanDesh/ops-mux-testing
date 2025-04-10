@@ -1,88 +1,150 @@
 'use client';
-
-import { useEffect, useState } from 'react';
-import StreamSender from '@/components/StreamSender';
+import { useEffect, useRef, useState } from 'react';
+import { useStreamListener } from '@/hooks/useStreamListener';
+import StreamPlayer from '@/components/StreamPlayer';
+import { io, Socket } from 'socket.io-client';
 
 export default function Home() {
-  const [streamId, setStreamId] = useState<string | null>(null);
-  const [isStreamActive, setIsStreamActive] = useState(false);
+  const [formData, setFormData] = useState({ 
+    video_creator_id: 642,
+    channel_id: 292,
+    title: 'title2',
+    description: 'desc2',
+    categories: ['3', '5'],
+    allow_comments: true,
+    allow_watch_comments: true,
+    access_type: 'free',
+  });
 
-  useEffect(() => {
-    if (!streamId) return;
-    console.log(streamId)
+  const [showFormModal, setShowFormModal] = useState(false);
+  const [streamInfo, setStreamInfo] = useState(null);
+  const [isLive, setIsLive] = useState(false);
+  const videoPreviewRef = useRef<HTMLVideoElement | null>(null);
+  const socketRef = useRef<Socket | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const [playbackId, setPlaybackId] = useState('');
+  const [stream_id, setStream_id] = useState('');
+  const [streamKey, setStreamKey] = useState('');
 
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch(`/api/mux/status?streamId=${streamId}`);
-        const data = await res.json();
-        console.log(data);
-        if (data?.isActive) {
-          setIsStreamActive(true);
-          clearInterval(interval);
-        }
-      } catch (err) {
-        console.error('Error polling stream status:', err);
+  useStreamListener(stream_id ?? '', () => {
+    setIsLive(true);
+    alert('🎬 Your livestream is now LIVE on Mux!');
+  }, socketRef.current);
+
+  const handleInputChange = (e: any) => {
+    const { name, value, type, checked } = e.target;
+    setFormData(prev => ({
+      ...prev,
+      [name]: type === 'checkbox' ? checked : value
+    }));
+  };
+
+  const handleFormSubmit = async () => {
+    setShowFormModal(false);
+
+    socketRef.current = io('http://localhost:3002', {
+      auth: { ...formData }
+    });
+
+    socketRef.current.on('connect', async () => {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      if (videoPreviewRef.current) {
+        videoPreviewRef.current.srcObject = stream;
       }
-    }, 3000);
+      mediaRecorderRef.current = new MediaRecorder(stream, {
+        mimeType: 'video/webm; codecs=vp8,opus',
+      });
 
-    return () => clearInterval(interval);
-  }, [streamId]);
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        if (event.data.size > 0 && socketRef.current?.connected) {
+          event.data.arrayBuffer().then(buffer => {
+            socketRef.current?.emit('message', buffer);
+          });
+        }
+      };
+
+      mediaRecorderRef.current.start(1000);
+    });
+
+    socketRef.current.on('message', (msg: string) => {
+      const { playbackId, streamId, streamKey } = JSON.parse(msg);
+      setPlaybackId(playbackId);
+      setStream_id(streamId);
+      setStreamKey(streamKey);
+    });
+  };
 
   return (
-    <main style={{ padding: '2rem' }}>
-      <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>🎥 Live Stream to Mux</h1>
+    <div style={{ padding: 30 }}>
+      <h1>🎥 Go Live</h1>
 
-      <StreamSenderWrapper onStreamId={(id) => setStreamId(id)} />
+      <button onClick={() => setShowFormModal(true)}>Start Streaming</button>
 
-      {streamId && !isStreamActive && (
-        <p style={{ marginTop: '1rem', color: 'orange' }}>⏳ Waiting for stream to become active...</p>
+      {/* Video preview */}
+      <div style={{ marginTop: 20 }}>
+        <video
+          ref={videoPreviewRef}
+          style={{ width: '60%', borderRadius: 8 }}
+          muted
+          autoPlay
+          playsInline
+        />
+      </div>
+
+      {/* Mux stream info */}
+      {playbackId && (
+        <div style={{ marginTop: 20 }}>
+          <p><strong>Stream ID:</strong> {stream_id}</p>
+          <p><strong>Playback ID:</strong> {playbackId}</p>
+          <p><strong>Stream Key:</strong> {streamKey}</p>
+          <p>Waiting for your stream to go live...</p>
+        </div>
       )}
 
-      {isStreamActive && (
-        <p style={{ marginTop: '1rem', color: 'green' }}>✅ Stream is LIVE!</p>
+      {playbackId && stream_id && isLive && (
+        <StreamPlayer playbackId={playbackId} streamId={stream_id} />
       )}
-    </main>
-  );
-}
 
-function StreamSenderWrapper({ onStreamId }: { onStreamId: (id: string) => void }) {
-  const [playbackId, setPlaybackId] = useState('');
-  const [streamId, setStreamId] = useState('');
+      {/* Modal form */}
+      {showFormModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center',
+          zIndex: 9999
+        }}>
+          <div style={{
+            backgroundColor: 'maroon', padding: 20, borderRadius: 8,
+            width: 500, maxWidth: '90%'
+          }}>
+            <h2>Enter Stream Details</h2>
+            <input type="text" name="title" placeholder="Title" value={formData.title} onChange={handleInputChange} style={{ width: '100%', marginBottom: 10 }} />
+            <textarea name="description" placeholder="Description" value={formData.description} onChange={handleInputChange} style={{ width: '100%', marginBottom: 10 }} />
 
-  useEffect(() => {
-    if (streamId) {
-      onStreamId(streamId);
-      console.log("Stream Sender" , streamId);
-    }
-  }, [streamId]);
+            <label>
+              <input type="checkbox" name="allowComments" checked={formData.allow_comments} onChange={handleInputChange} /> Allow Watchers to Comment
+            </label><br />
+            <label>
+              <input type="checkbox" name="showComments" checked={formData.allow_watch_comments} onChange={handleInputChange} /> Allow Watchers to See Comments
+            </label><br /><br />
 
-  return (
-    <StreamSenderCapture
-      onCapture={(data) => {
-        if (data.streamId) setStreamId(data.streamId);
-        if (data.playbackId) setPlaybackId(data.playbackId);
-      }}
-    />
-  );
-}
+            <label>
+              <input type="radio" name="type" value="free" checked={formData.access_type === 'free'} onChange={handleInputChange} /> Free
+            </label>
+            <label style={{ marginLeft: 10 }}>
+              <input type="radio" name="type" value="paid" checked={formData.access_type === 'paid'} onChange={handleInputChange} /> Paid
+            </label>
+            <label style={{ marginLeft: 10 }}>
+              <input type="radio" name="type" value="member" checked={formData.access_type === 'member'} onChange={handleInputChange} /> Members Only
+            </label>
 
-function StreamSenderCapture({
-  onCapture,
-}: {
-  onCapture: (data: { playbackId: string; streamId: string }) => void;
-}) {
-  const [playbackId, setPlaybackId] = useState('');
-  const [streamId, setStreamId] = useState('');
-
-  useEffect(() => {
-    if (playbackId && streamId) {
-      onCapture({ playbackId, streamId });
-    }
-  }, [playbackId, streamId]);
-
-  return (
-    <StreamSender
-      key="sender" 
-    />
+            <div style={{ marginTop: 20, display: 'flex', justifyContent: 'space-between' }}>
+              <button onClick={handleFormSubmit}>Go Live</button>
+              <button onClick={() => setShowFormModal(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
 }

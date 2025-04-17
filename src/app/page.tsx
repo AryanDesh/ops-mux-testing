@@ -39,6 +39,13 @@ export default function Home() {
   
       connectedSocket.emit('init-live', formData);
       connectedSocket.once('live-init-response', (data) => {
+        if (data.status === 'error') {
+          console.error('Stream init failed:', data.message);
+          alert('Failed to start live stream: ' + data.message);
+          setIsSubmitting(false);
+          return;
+        }
+              
         const {
           streamId,
           playbackId,

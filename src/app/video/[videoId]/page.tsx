@@ -34,6 +34,7 @@ export default function VideoPage() {
         }
       };
   
+      
       mediaRecorderRef.current.start(2000);
     };
   

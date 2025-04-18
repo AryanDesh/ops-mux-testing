@@ -26,11 +26,6 @@ export default function Home() {
   const [stream_id, setStream_id] = useState('');
   const [streamKey, setStreamKey] = useState('');
 
-  useStreamListener(stream_id ?? '', () => {
-    setIsLive(true);
-    alert('🎬 Your livestream is now LIVE on Mux!');
-  }, socketRef.current);
-
   const handleInputChange = (e: any) => {
     const { name, value, type, checked } = e.target;
     setFormData(prev => ({
@@ -67,7 +62,7 @@ export default function Home() {
     });
 
     socketRef.current.on('message', (msg: string) => {
-      const { playbackId, streamId, streamKey } = JSON.parse(msg);
+      const { playbackId, streamId, streamKey, video_id, video_title, access_type } = JSON.parse(msg);
       setPlaybackId(playbackId);
       setStream_id(streamId);
       setStreamKey(streamKey);
